@@ -1,44 +1,68 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+
 import '../models/estacion.dart';
-import 'auth_service.dart'; // 👈 IMPORTANTE
+import 'auth_service.dart';
 
 class ApiService {
-  final String baseUrl = "http://192.168.121.46:8000";
+  // 🔥 IMPORTANTE: usa localhost para Flutter Web
+  final String baseUrl = "http://localhost:8000";
 
-  // 🔹 GET (ya lo tenías)
+  // 🔹 GET estaciones
   Future<List<Estacion>> fetchEstaciones() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/estaciones/'),
-    );
+    final url = '$baseUrl/estaciones/';
+    print("🌐 URL: $url");
 
-    if (response.statusCode == 200) {
-      List jsonResponse = json.decode(response.body);
+    try {
+      final response = await http.get(Uri.parse(url));
 
-      return jsonResponse
-          .map((data) => Estacion.fromJson(data))
-          .toList();
-    } else {
-      throw Exception('Error al conectar con el servidor SMAT');
+      print("📡 STATUS: ${response.statusCode}");
+      print("📦 BODY: ${response.body}");
+
+      if (response.statusCode == 200) {
+        List<dynamic> jsonResponse = json.decode(response.body);
+
+        print("🧠 PARSED: $jsonResponse");
+
+        return jsonResponse
+            .map((data) => Estacion.fromJson(data))
+            .toList();
+      } else {
+        throw Exception('Error servidor: ${response.statusCode}');
+      }
+    } catch (e) {
+      print("❌ ERROR FETCH: $e");
+      throw Exception('Error de conexión');
     }
   }
 
-  // NUEVO: POST protegido
+  // 🔹 POST estación (con token)
   Future<bool> crearEstacion(String nombre, String ubicacion) async {
     final token = await AuthService().getToken();
+    final url = '$baseUrl/estaciones/';
 
-    final response = await http.post(
-      Uri.parse('$baseUrl/estaciones/'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({
-        'nombre': nombre,
-        'ubicacion': ubicacion,
-      }),
-    );
+    print("🔐 TOKEN: $token");
 
-    return response.statusCode == 200;
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'nombre': nombre,
+          'ubicacion': ubicacion,
+        }),
+      );
+
+      print("📡 STATUS POST: ${response.statusCode}");
+      print("📦 BODY POST: ${response.body}");
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print("❌ ERROR POST: $e");
+      return false;
+    }
   }
 }
