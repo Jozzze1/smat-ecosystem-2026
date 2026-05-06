@@ -81,9 +81,7 @@ def obtener_historial(id: int, db: Session = Depends(get_db)):
     promedio = sum(valores) / conteo if conteo > 0 else 0.0
     return {"estacion_id": id, "lecturas": valores, "conteo": conteo, "promedio": promedio}
 
-# Endpoint de prueba simple para verificar que la API responde
-@app.get("/estaciones/")
-def test():
-    return [
-        {"id": 1, "nombre": "TEST", "ubicacion": "OK"}
-    ]
+@app.get("/estaciones/", tags=["Gestión de Infraestructura"], summary="Listar estaciones")
+def listar_estaciones(db: Session = Depends(get_db)):
+    estaciones = db.query(models.EstacionDB).all()
+    return estaciones
