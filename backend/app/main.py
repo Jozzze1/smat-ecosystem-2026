@@ -1,41 +1,43 @@
-# Importación de FastAPI, dependencias, base de datos y módulos internos del proyecto
 from . import crud, models
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from . import schemas
 from .database import engine, get_db
 from .auth import crear_token_acceso, obtener_identidad_actual
 
-# Crea las tablas al iniciar
+# Crear tablas
 models.Base.metadata.create_all(bind=engine)
 
-# Configuración principal de la API (metadatos, descripción, contacto, licencia)
 app = FastAPI(
     title="SMAT - Sistema de Monitoreo de Alerta Temprana",
-    description="""
-API robusta para la gestión y monitoreo de desastres naturales.
-Permite la telemetría de sensores en tiempo real y el cálculo de niveles de riesgo.
-
-**Entidades principales:**
-* **Estaciones:** Puntos de monitoreo físico.
-* **Lecturas:** Datos capturados por sensores.
-* **Riesgos:** Análisis de criticidad basado en umbrales.
-""",
-    version="1.0.0",
-    terms_of_service="http://unmsm.edu.pe/terms/",
-    contact={
-        "name": "Soporte Técnico SMAT - FISI",
-        "url": "http://fisi.unmsm.edu.pe",
-        "email": "jose.pacarap@unmsm.edu.pe", 
-    },
-    license_info={
-        "name": "UNMSM 2.0",
-        "url": "https://www.unmsm.edu.pe/licenses/LICENSE-2.0.html",
-    },
+    version="1.0.0"
 )
 
-# Configuración de CORS para permitir acceso desde cualquier origen (útil para frontend)
+# ✅ DATOS INICIALES (solo si la BD está vacía)
+@app.on_event("startup")
+def startup_event():
+    db: Session = next(get_db())
+
+    existe = db.query(models.EstacionDB).first()
+    if existe:
+        print("⚠️ Ya hay datos")
+        return
+
+    estaciones = [
+        models.EstacionDB(id=1, nombre="Río Rímac", ubicacion="Lima"),
+        models.EstacionDB(id=2, nombre="Estación Norte", ubicacion="Comas"),
+        models.EstacionDB(id=3, nombre="Estación Sur", ubicacion="VES"),
+    ]
+
+    db.add_all(estaciones)
+    db.commit()
+
+    print("✅ Datos iniciales insertados")
+
+
+# ✅ CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -44,44 +46,61 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Endpoint de autenticación que genera un token JWT básico
+# ✅ LOGIN CORRECTO (IMPORTANTE PARA AUTHORIZE 🔓)
 @app.post("/token", tags=["Seguridad"])
-async def login():
-    return {"access_token": crear_token_acceso({"sub": "admin_smat"}), "token_type": "bearer"}
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    return {
+        "access_token": crear_token_acceso({"sub": form_data.username}),
+        "token_type": "bearer"
+    }
 
-# Endpoint para crear estaciones (protegido con autenticación)
+# ✅ GET estaciones (solo UNO, evita duplicados)
+@app.get("/estaciones/", tags=["Gestión de Infraestructura"])
+def listar_estaciones(db: Session = Depends(get_db)):
+    return db.query(models.EstacionDB).all()
+
+# ✅ POST estaciones (PROTEGIDO)
 @app.post("/estaciones/", status_code=201, tags=["Gestión de Infraestructura"])
-def crear_estacion(estacion: schemas.EstacionCreate, db: Session = Depends(get_db), token: str = Depends(obtener_identidad_actual)):
+def crear_estacion(
+    estacion: schemas.EstacionCreate,
+    db: Session = Depends(get_db),
+    token: str = Depends(obtener_identidad_actual)
+):
     return crud.crear_estacion(db=db, estacion=estacion)
 
-# Endpoint para registrar lecturas de sensores con validación de existencia de estación
+# ✅ POST lecturas
 @app.post("/lecturas/", status_code=201, tags=["Telemetría de Sensores"])
-def registrar_lectura(lectura: schemas.LecturaCreate, db: Session = Depends(get_db), token: str = Depends(obtener_identidad_actual)):
+def registrar_lectura(
+    lectura: schemas.LecturaCreate,
+    db: Session = Depends(get_db),
+    token: str = Depends(obtener_identidad_actual)
+):
+    estacion_db = db.query(models.EstacionDB).filter(
+        models.EstacionDB.id == lectura.estacion_id
+    ).first()
 
-    estacion_db = db.query(models.EstacionDB).filter(models.EstacionDB.id == lectura.estacion_id).first()
     if not estacion_db:
-        raise HTTPException(status_code=404, detail="Error de Integridad: La estación no existe.")
+        raise HTTPException(status_code=404, detail="La estación no existe")
+
     return crud.crear_lectura(db=db, lectura=lectura)
 
-
-# Endpoint para obtener estadísticas globales del sistema
-@app.get("/estaciones/stats", response_model=schemas.StatsResumen, tags=["Auditoría"])
-def obtener_estadisticas(db: Session = Depends(get_db)):
-    return crud.obtener_estadisticas_globales(db)
-
-
-# Endpoint para obtener historial de lecturas de una estación con cálculo de promedio
-@app.get("/estaciones/{id}/historial", tags=["Reportes Históricos"])
+# ✅ HISTORIAL
+@app.get("/estaciones/{id}/historial")
 def obtener_historial(id: int, db: Session = Depends(get_db)):
-    estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
+    estacion = db.query(models.EstacionDB).filter(
+        models.EstacionDB.id == id
+    ).first()
+
     if not estacion:
         raise HTTPException(status_code=404, detail="Estación no encontrada")
+
     valores = [l.valor for l in estacion.lecturas]
     conteo = len(valores)
     promedio = sum(valores) / conteo if conteo > 0 else 0.0
-    return {"estacion_id": id, "lecturas": valores, "conteo": conteo, "promedio": promedio}
 
-@app.get("/estaciones/", tags=["Gestión de Infraestructura"], summary="Listar estaciones")
-def listar_estaciones(db: Session = Depends(get_db)):
-    estaciones = db.query(models.EstacionDB).all()
-    return estaciones
+    return {
+        "estacion_id": id,
+        "lecturas": valores,
+        "conteo": conteo,
+        "promedio": promedio
+    }
