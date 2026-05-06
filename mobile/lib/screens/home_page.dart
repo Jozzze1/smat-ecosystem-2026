@@ -1,44 +1,8 @@
 import 'package:flutter/material.dart';
-import 'services/api_service.dart';
-import 'services/auth_service.dart';
-import 'models/estacion.dart';
-import 'screens/login_screen.dart';
-
-void main() => runApp(const SMATApp());
-
-class SMATApp extends StatelessWidget {
-  const SMATApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'SMAT Mobile',
-
-      // 🔐 AQUÍ va la verificación de token
-      home: FutureBuilder<String?>(
-        future: AuthService().getToken(),
-        builder: (context, snapshot) {
-
-          // ⏳ cargando token
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-
-          // 🟢 si hay token → Home
-          if (snapshot.hasData && snapshot.data != null) {
-            return const HomePage();
-          }
-
-          // 🔴 si no hay token → Login
-          return const LoginScreen();
-        },
-      ),
-    );
-  }
-}
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
+import '../models/estacion.dart';
+import 'login_screen.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -66,19 +30,13 @@ class _HomePageState extends State<HomePage> {
         loading = false;
       });
     } catch (e) {
-      setState(() {
-        loading = false;
-      });
-
-      debugPrint("Error cargando estaciones: $e");
+      setState(() => loading = false);
+      debugPrint("Error: $e");
     }
   }
 
   Future<void> refrescar() async {
-    setState(() {
-      loading = true;
-    });
-
+    setState(() => loading = true);
     await cargarEstaciones();
   }
 
@@ -86,14 +44,14 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SMAT - Monitoreo Móvil'),
+        title: const Text('Estaciones SMAT'),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await AuthService().logout();
 
-              if (!mounted) return;
+              if (!context.mounted) return;
 
               Navigator.pushAndRemoveUntil(
                 context,
@@ -101,7 +59,7 @@ class _HomePageState extends State<HomePage> {
                 (route) => false,
               );
             },
-          )
+          ),
         ],
       ),
 
